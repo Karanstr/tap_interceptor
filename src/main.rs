@@ -7,9 +7,53 @@ use std::collections::BTreeSet;
 use std::error::Error;
 use futures_util::stream::StreamExt;
 
-#[tokio::main]
+struct Profile {
+    name : String,
+    bindings : [Option<Key>; 32],
+}
 
+
+#[tokio::main]
 async fn main() {
+    
+    let default_profile = Profile {
+        name: "Letters".to_owned(),
+        bindings : [      //Yeah binary follows the left hand instead of the right shut up
+            None,         //00000 (Default)
+            Some(Key::A), //00001
+            Some(Key::E), //00010
+            Some(Key::N), //00011
+            Some(Key::I), //00100
+            Some(Key::D), //00101
+            Some(Key::T), //00110
+            None,         //00111 (Shift)
+            Some(Key::O), //01000
+            Some(Key::K), //01001
+            Some(Key::M), //01010
+            Some(Key::F), //01011
+            Some(Key::L), //01100
+            Some(Key::G), //01101
+            None,         //01110 (Backspace)
+            Some(Key::R), //01111
+            Some(Key::U), //10000
+            Some(Key::Y), //10001
+            Some(Key::B), //10010
+            Some(Key::P), //10011
+            Some(Key::Z), //10100
+            Some(Key::W), //10101
+            Some(Key::Q), //10110
+            Some(Key::J), //10111
+            Some(Key::S), //11000
+            None,         //11001 (Enter)
+            Some(Key::X), //11010
+            Some(Key::V), //11011
+            None,         //11100 (Switch)
+            Some(Key::C), //11101
+            Some(Key::H), //11110
+            None,         //11111 (Space)
+        ],
+    };
+
     let tap_service_uuid = Uuid::parse_str("C3FF0001-1D8B-40FD-A56F-C7BD5D0F3370").unwrap();
     
     let tap_data_characteristic = Characteristic {
@@ -19,9 +63,7 @@ async fn main() {
         descriptors : BTreeSet::new(),
     };
 
-    //Virtual keyboard
-    /*
-    let mut input = uinput::open("/dev/uinput")
+    let mut virtual_keyboard = uinput::open("/dev/uinput")
         .unwrap()
         .name("tap-interceptor")
         .unwrap()
@@ -29,8 +71,6 @@ async fn main() {
         .unwrap()
         .create()
         .unwrap();
-    */
-
 
     let tap = loop {
         if let Some(tap) = get_device_with_service(tap_service_uuid).await {
@@ -55,10 +95,15 @@ async fn main() {
 
     tap.subscribe(&tap_data_characteristic).await.unwrap();
     let mut notification_stream = tap.notifications().await.unwrap();
-
     //Figure out how to detect if the device disconnects
     while let Some(notifications) = notification_stream.next().await {
-        dbg!(notifications);
+        match default_profile.bindings[notifications.value[0] as usize] {
+            Some(key) => {
+                virtual_keyboard.click(&key).unwrap();
+                virtual_keyboard.synchronize().unwrap();
+            }
+            None => break
+        }
         
     }
         
