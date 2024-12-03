@@ -136,14 +136,11 @@ async fn main() {
     //Figure out how to detect if the device disconnects
     while let Some(notifications) = notification_stream.next().await {
         match &default_profile.bindings[notifications.value[0] as usize] {
-            Binding::Empty => {}
             Binding::PressKey(key) => {
                 virtual_keyboard.click(key).unwrap();
                 virtual_keyboard.synchronize().unwrap();
             }
-            Binding::ToggleKey(key) => {}
-            Binding::SwitchProfile(new_profile) => {}
-            Binding::Macro => {}
+            _ => {break} 
         }
     }
         
