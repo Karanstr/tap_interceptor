@@ -21,10 +21,47 @@ struct Profile {
     bindings : [Binding; 32],
 }
 
+//Swap these out for LazyHashmaps?
+struct Services {
+    tap : u128,
+    mode : u128,
+}
+const SERVICES:Services = Services {
+    tap : 0xC3FF0001_1D8B_40FD_A56F_C7BD5D0F3370,
+    mode : 0x6E400001_B5A3_F393_E0A9_E50E24DCCA9E,
+};
+struct Characteristics {
+    tap_controller : Characteristic,
+    mode_switcher : Characteristic,
+}
+const CHARACTERISTICS:Characteristics = Characteristics {
+    tap_controller : Characteristic {
+        uuid : Uuid::from_u128(0xc3ff0005_1d8b_40fd_a56f_c7bd5d0f3370),
+        service_uuid : Uuid::from_u128(SERVICES.tap),
+        properties : CharPropFlags::NOTIFY,
+        descriptors : BTreeSet::new(),
+    },
+    mode_switcher : Characteristic {
+        uuid : Uuid::from_u128(0x6E400002_B5A3_F393_E0A9_E50E24DCCA9E),
+        service_uuid : Uuid::from_u128(SERVICES.mode),
+        properties : CharPropFlags::WRITE_WITHOUT_RESPONSE,
+        descriptors : BTreeSet::new(),
+    },
+};
+struct MagicPackets {
+    controller : [u8; 4],
+    default : [u8; 4]
+}
+const MAGICPACKETS:MagicPackets = MagicPackets {
+    controller : [0x03, 0x0C, 0x00, 0x01],
+    default : [0x03, 0x0C, 0x00, 0x00],
+};
+
 
 #[tokio::main]
 async fn main() {
-      
+
+
     let default_profile = Profile {
         bindings : [                   //Yeah binary follows the left hand
             Binding::Empty,            //00000 (Default)
@@ -62,15 +99,6 @@ async fn main() {
         ],
     };
 
-    let tap_service_uuid = Uuid::parse_str("C3FF0001-1D8B-40FD-A56F-C7BD5D0F3370").unwrap();
-    
-    let tap_data_characteristic = Characteristic {
-        uuid : Uuid::parse_str("c3ff0005-1d8b-40fd-a56f-c7bd5d0f3370").unwrap(),
-        service_uuid : tap_service_uuid,
-        properties : CharPropFlags::NOTIFY,
-        descriptors : BTreeSet::new(),
-    };
-
     let mut virtual_keyboard = uinput::open("/dev/uinput")
         .unwrap()
         .name("tap-interceptor")
@@ -81,19 +109,20 @@ async fn main() {
         .unwrap();
 
     let tap = loop {
-        if let Some(tap) = get_device_with_service(tap_service_uuid).await {
+        if let Some(tap) = get_device_with_service(Uuid::from_u128(SERVICES.tap)).await {
+            tap.discover_services().await.unwrap();
             break tap
         }
-        println!("No compatible devices found. Attempting in 5 seconds");
-        tokio::time::sleep(Duration::from_secs(5)).await;
+        println!("No compatible devices connected. Next check in 5 seconds");
+        sleep(Duration::from_secs(5)).await;
     };
-    
-    tap.discover_services().await.unwrap();
-    let tap_clone = tap.clone();
+
+    //Silly but I have to clone tap into the task without moving tap
+    let tap_clone = tap.clone(); 
     let refresh_controller = tokio::spawn(async move {
         let refresh_tap = tap_clone;
         loop {
-            match enter_controller(&refresh_tap).await {
+            match change_tap_mode(&refresh_tap, MAGICPACKETS.controller).await {
                 Ok(_) => println!("Refreshed"),
                 Err(error) => {dbg!(error);},
             };
@@ -101,7 +130,7 @@ async fn main() {
         }
     });
 
-    tap.subscribe(&tap_data_characteristic).await.unwrap();
+    tap.subscribe(&CHARACTERISTICS.tap_controller).await.unwrap();
     let mut notification_stream = tap.notifications().await.unwrap();
 
     //Figure out how to detect if the device disconnects
@@ -119,32 +148,14 @@ async fn main() {
     }
         
     refresh_controller.abort();
-    exit_controller(tap).await.unwrap();
+    change_tap_mode(&tap, MAGICPACKETS.default).await.unwrap();
 
 }
 
-//Clean these two up
-async fn enter_controller(tap:&Peripheral) -> Result<(), Box<dyn Error>> {
-    tap.write(&Characteristic {
-        uuid : Uuid::parse_str("6E400002-B5A3-F393-E0A9-E50E24DCCA9E").unwrap(),
-        service_uuid : Uuid::parse_str("6E400001-B5A3-F393-E0A9-E50E24DCCA9E").unwrap(),
-        properties : CharPropFlags::WRITE_WITHOUT_RESPONSE,
-        descriptors : BTreeSet::new(),
-        },
-        &[0x03, 0x0C, 0x00, 0x01], //Magic packet for enter controller
-        WriteType::WithoutResponse
-    ).await?;
-    Ok(())
-}
-
-async fn exit_controller(tap:Peripheral) -> Result<(), Box<dyn Error>> {
-    tap.write(&Characteristic {
-        uuid : Uuid::parse_str("6E400002-B5A3-F393-E0A9-E50E24DCCA9E").unwrap(),
-        service_uuid : Uuid::parse_str("6E400001-B5A3-F393-E0A9-E50E24DCCA9E").unwrap(),
-        properties : CharPropFlags::WRITE_WITHOUT_RESPONSE,
-        descriptors : BTreeSet::new(),
-        },
-        &[0x03, 0x0C, 0x00, 0x00], //Magic packet for exit controller
+async fn change_tap_mode(tap:&Peripheral, new_mode:[u8; 4]) -> Result<(), Box<dyn Error>> {
+    tap.write(
+        &CHARACTERISTICS.mode_switcher,
+        &new_mode,
         WriteType::WithoutResponse
     ).await?;
     Ok(())
