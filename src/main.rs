@@ -108,10 +108,11 @@ async fn main() {
     }
         
     refresh_controller.abort();
-    exit_controller(tap);
+    exit_controller(tap).await.unwrap();
 
 }
 
+//Clean these two up
 async fn enter_controller(tap:&Peripheral) -> Result<(), Box<dyn Error>> {
     tap.write(&Characteristic {
         uuid : Uuid::parse_str("6E400002-B5A3-F393-E0A9-E50E24DCCA9E").unwrap(),
@@ -125,8 +126,8 @@ async fn enter_controller(tap:&Peripheral) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn exit_controller(tap:Peripheral) {
-    let _ = tap.write(&Characteristic {
+async fn exit_controller(tap:Peripheral) -> Result<(), Box<dyn Error>> {
+    tap.write(&Characteristic {
         uuid : Uuid::parse_str("6E400002-B5A3-F393-E0A9-E50E24DCCA9E").unwrap(),
         service_uuid : Uuid::parse_str("6E400001-B5A3-F393-E0A9-E50E24DCCA9E").unwrap(),
         properties : CharPropFlags::WRITE_WITHOUT_RESPONSE,
@@ -134,7 +135,8 @@ fn exit_controller(tap:Peripheral) {
         },
         &[0x03, 0x0C, 0x00, 0x00], //Magic packet for exit controller
         WriteType::WithoutResponse
-    );
+    ).await?;
+    Ok(())
 }
 
 async fn get_device_with_service(service_uuid:Uuid) -> Option<Peripheral> {
