@@ -7,50 +7,58 @@ use std::collections::BTreeSet;
 use std::error::Error;
 use futures_util::stream::StreamExt;
 
+
+enum Binding {
+    PressKey(Key),
+    ToggleKey(Key), //This one is a little trickier, maybe we have to save current state of every key in (every profile?)
+    SwitchProfile(String),
+    Macro, //Figure out what this means
+    Empty
+}
+
+//Store profiles in a map by name, allowing for plug and play
 struct Profile {
-    name : String,
-    bindings : [Option<Key>; 32],
+    bindings : [Binding; 32],
 }
 
 
 #[tokio::main]
 async fn main() {
-    
+      
     let default_profile = Profile {
-        name: "Letters".to_owned(),
-        bindings : [      //Yeah binary follows the left hand instead of the right shut up
-            None,         //00000 (Default)
-            Some(Key::A), //00001
-            Some(Key::E), //00010
-            Some(Key::N), //00011
-            Some(Key::I), //00100
-            Some(Key::D), //00101
-            Some(Key::T), //00110
-            None,         //00111 (Shift)
-            Some(Key::O), //01000
-            Some(Key::K), //01001
-            Some(Key::M), //01010
-            Some(Key::F), //01011
-            Some(Key::L), //01100
-            Some(Key::G), //01101
-            None,         //01110 (Backspace)
-            Some(Key::R), //01111
-            Some(Key::U), //10000
-            Some(Key::Y), //10001
-            Some(Key::B), //10010
-            Some(Key::P), //10011
-            Some(Key::Z), //10100
-            Some(Key::W), //10101
-            Some(Key::Q), //10110
-            Some(Key::J), //10111
-            Some(Key::S), //11000
-            None,         //11001 (Enter)
-            Some(Key::X), //11010
-            Some(Key::V), //11011
-            None,         //11100 (Switch)
-            Some(Key::C), //11101
-            Some(Key::H), //11110
-            None,         //11111 (Space)
+        bindings : [                   //Yeah binary follows the left hand
+            Binding::Empty,            //00000 (Default)
+            Binding::PressKey(Key::A), //00001
+            Binding::PressKey(Key::E), //00010
+            Binding::PressKey(Key::N), //00011
+            Binding::PressKey(Key::I), //00100
+            Binding::PressKey(Key::D), //00101
+            Binding::PressKey(Key::T), //00110
+            Binding::Empty,            //00111 (Shift)
+            Binding::PressKey(Key::O), //01000
+            Binding::PressKey(Key::K), //01001
+            Binding::PressKey(Key::M), //01010
+            Binding::PressKey(Key::F), //01011
+            Binding::PressKey(Key::L), //01100
+            Binding::PressKey(Key::G), //01101
+            Binding::Empty,            //01110 (Backspace)
+            Binding::PressKey(Key::R), //01111
+            Binding::PressKey(Key::U), //10000
+            Binding::PressKey(Key::Y), //10001
+            Binding::PressKey(Key::B), //10010
+            Binding::PressKey(Key::P), //10011
+            Binding::PressKey(Key::Z), //10100
+            Binding::PressKey(Key::W), //10101
+            Binding::PressKey(Key::Q), //10110
+            Binding::PressKey(Key::J), //10111
+            Binding::PressKey(Key::S), //11000
+            Binding::Empty,            //11001 (Enter)
+            Binding::PressKey(Key::X), //11010
+            Binding::PressKey(Key::V), //11011
+            Binding::Empty,            //11100 (Switch)
+            Binding::PressKey(Key::C), //11101
+            Binding::PressKey(Key::H), //11110
+            Binding::Empty,            //11111 (Space)
         ],
     };
 
@@ -95,16 +103,19 @@ async fn main() {
 
     tap.subscribe(&tap_data_characteristic).await.unwrap();
     let mut notification_stream = tap.notifications().await.unwrap();
+
     //Figure out how to detect if the device disconnects
     while let Some(notifications) = notification_stream.next().await {
-        match default_profile.bindings[notifications.value[0] as usize] {
-            Some(key) => {
-                virtual_keyboard.click(&key).unwrap();
+        match &default_profile.bindings[notifications.value[0] as usize] {
+            Binding::Empty => {}
+            Binding::PressKey(key) => {
+                virtual_keyboard.click(key).unwrap();
                 virtual_keyboard.synchronize().unwrap();
             }
-            None => break
+            Binding::ToggleKey(key) => {}
+            Binding::SwitchProfile(new_profile) => {}
+            Binding::Macro => {}
         }
-        
     }
         
     refresh_controller.abort();
